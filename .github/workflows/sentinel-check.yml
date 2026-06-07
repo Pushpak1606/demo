@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   risk-analysis:
@@ -19,7 +19,6 @@ jobs:
 
       - name: Run SentinelAI Risk Analysis
         env:
-          # Your FastAPI backend URL
           SENTINEL_API_URL: "https://sentinel-ai-fhh2.onrender.com/api/v1/deploy/analyze"
         run: |
           # 1. Gather repository and branch information
@@ -65,6 +64,9 @@ jobs:
           RESPONSE=$(curl -s -X POST "$SENTINEL_API_URL" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD")
+
+          # PRINT RAW RESPONSE TO DEBUG
+          echo "Raw Server Response: $RESPONSE"
 
           # 5. Parse and print the analysis
           RISK_SCORE=$(echo "$RESPONSE" | grep -o '"risk_score":[0-9]*' | cut -d: -f2)
