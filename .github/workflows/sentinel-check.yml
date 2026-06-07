@@ -1,0 +1,82 @@
+name: SentinelAI Risk Check
+
+on:
+  push:
+    branches: [ main, dev, staging ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  risk-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run SentinelAI Risk Analysis
+        env:
+          # Your FastAPI backend URL
+          SENTINEL_API_URL: "https://sentinel-ai-fhh2.onrender.com/api/v1/deploy/analyze"
+        run: |
+          # 1. Gather repository and branch information
+          SERVICE_NAME="${{ github.event.repository.name }}"
+          ENVIRONMENT="production"
+          
+          if [[ "${{ github.ref }}" == *"refs/heads/dev"* ]]; then
+            ENVIRONMENT="development"
+          elif [[ "${{ github.ref }}" == *"refs/heads/staging"* ]]; then
+            ENVIRONMENT="staging"
+          fi
+
+          DEPLOYED_BY="${{ github.actor }}"
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # 2. Infer the type of code change
+          CHANGE_TYPE="code-deploy"
+          MSG_LOWER=$(echo "$COMMIT_MSG" | tr '[:upper:]' '[:lower:]')
+          if [[ "$MSG_LOWER" =~ (migrat|schema|alter table|drop column) ]]; then
+            CHANGE_TYPE="db-migration"
+          elif [[ "$MSG_LOWER" =~ (revert|rollback) ]]; then
+            CHANGE_TYPE="rollback"
+          elif [[ "$MSG_LOWER" =~ (config|env|toggle|flag) ]]; then
+            CHANGE_TYPE="config-change"
+          fi
+
+          # 3. Create the payload
+          PAYLOAD=$(cat <<EOF
+          {
+            "service": "$SERVICE_NAME",
+            "environment": "$ENVIRONMENT",
+            "change_type": "$CHANGE_TYPE",
+            "timestamp": "$TIMESTAMP",
+            "deployed_by": "$DEPLOYED_BY"
+          }
+          EOF
+          )
+
+          echo "Sending deployment event to SentinelAI: $PAYLOAD"
+
+          # 4. Request Risk Analysis from Backend
+          RESPONSE=$(curl -s -X POST "$SENTINEL_API_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          # 5. Parse and print the analysis
+          RISK_SCORE=$(echo "$RESPONSE" | grep -o '"risk_score":[0-9]*' | cut -d: -f2)
+          RISK_LEVEL=$(echo "$RESPONSE" | grep -o '"risk_level":"[^"]*' | cut -d'"' -f4)
+          REASONING=$(echo "$RESPONSE" | grep -o '"reasoning":"[^"]*' | cut -d'"' -f4)
+
+          echo "========================================="
+          echo "       SENTINELAI RISK ASSESSMENT        "
+          echo "========================================="
+          echo "Risk Score : $RISK_SCORE/100"
+          echo "Risk Level : ${RISK_LEVEL^^}"
+          echo "Reasoning  : $REASONING"
+          echo "========================================="
+
+          # 6. Block the workflow if the risk level is High or Critical
+          if [ "$RISK_LEVEL" = "high" ] || [ "$RISK_LEVEL" = "critical" ]; then
+            echo "::error::SentinelAI blocked the build due to a $RISK_LEVEL risk assessment."
+            exit 1
+          fi
