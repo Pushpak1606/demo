@@ -2,9 +2,10 @@ name: SentinelAI Risk Check
 
 on:
   push:
-    branches: [ main, dev, staging ]
+    branches: [main, dev, staging]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   risk-analysis:
@@ -21,7 +22,7 @@ jobs:
           # 1. Gather repository and branch information
           SERVICE_NAME="${{ github.event.repository.name }}"
           ENVIRONMENT="production"
-          
+
           if [[ "${{ github.ref }}" == *"refs/heads/dev"* ]]; then
             ENVIRONMENT="development"
           elif [[ "${{ github.ref }}" == *"refs/heads/staging"* ]]; then
